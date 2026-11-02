@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "luacraft"
+version = "0.1.0"
+description = "Write Minecraft mods once in Lua, compile them to Java Edition datapacks and Bedrock Edition add-ons."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "LuaCraft contributors" }]
+keywords = ["minecraft", "bedrock", "java", "lua", "datapack", "addon", "modding"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+]
+
+# Runtime dependencies: intentionally EMPTY.
+# LuaCraft must run fully offline with the Python standard library only.
+dependencies = []
+
+[project.optional-dependencies]
+# Optional developer tooling, never required to build a mod.
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+luacraft = "luacraft.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/luacraft/luacraft"
+Issues = "https://github.com/luacraft/luacraft/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+luacraft = ["runtime/*.lua", "mappings/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

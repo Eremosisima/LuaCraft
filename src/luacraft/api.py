@@ -1,0 +1,421 @@
+"""The portable runtime API of LuaCraft.
+
+Every primitive the author can call is declared once, here, together with the
+capability level it reaches in each edition.  Backends consult this table; the
+analyser consults it to raise warnings and errors.
+
+Capability levels
+-----------------
+
+``full``
+    Supported natively and with the same observable semantics.
+
+``partial``
+    Supported, but the implementation has to be approximated.  Compiling for
+    that edition emits a warning explaining the difference.
+
+``none``
+    Not available.  Compiling for that edition is an error unless the call
+    sits inside a target specific hook.
+
+The point of this table is that portability is decided *by construction*: a
+primitive only becomes part of the portable API once it reaches ``full`` in
+both editions.  Everything else is reported, loudly, at build time.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Callable
+
+
+class Edition(Enum):
+    """The two target editions LuaCraft can compile for."""
+
+    JAVA = "java"
+    BEDROCK = "bedrock"
+
+    @property
+    def label(self) -> str:
+        if self is Edition.JAVA:
+            return "Java Edition"
+        return "Bedrock Edition"
+
+
+class Capability(Enum):
+    """How well a primitive is supported by an edition."""
+
+    FULL = "full"
+    PARTIAL = "partial"
+    NONE = "none"
+
+
+@dataclass(frozen=True)
+class Param:
+    """A single parameter of a primitive."""
+
+    name: str
+    lua_type: str
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class Primitive:
+    """One callable in the portable runtime API."""
+
+    name: str
+    summary: str
+    params: tuple[Param, ...]
+    #: Capability level per edition.
+    capabilities: dict[Edition, Capability]
+    #: Extra explanation used when a warning or error is raised.
+    notes: dict[Edition, str] = field(default_factory=dict)
+    #: Emitted by the Java backend as a plain mcfunction command.
+    java_command: str = ""
+    #: Emitted by the Bedrock backend as a Script API call.
+    bedrock_call: str = ""
+    #: Whether the primitive returns a value.
+    returns_value: bool = False
+
+    def capability(self, edition: Edition) -> Capability:
+        return self.capabilities.get(edition, Capability.NONE)
+
+    def is_portable(self) -> bool:
+        """True when the primitive behaves identically in both editions."""
+        return all(
+            self.capability(edition) is Capability.FULL for edition in Edition
+        )
+
+    def signature(self) -> str:
+        args = ", ".join(f"{p.name}: {p.lua_type}" for p in self.params)
+        return f"{self.name}({args})"
+
+
+# --------------------------------------------------------------------------
+# The primitive table
+# --------------------------------------------------------------------------
+
+PRIMITIVES: tuple[Primitive, ...] = (
+    Primitive(
+        name="say",
+        summary="Send a message to every player in the world.",
+        params=(Param("message", "string"),),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="say",
+        bedrock_call="broadcast",
+    ),
+    Primitive(
+        name="message",
+        summary="Send a message to a single player.",
+        params=(Param("player", "player"), Param("message", "string")),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="tellraw",
+        bedrock_call="sendMessage",
+    ),
+    Primitive(
+        name="give",
+        summary="Give items to a player.",
+        params=(
+            Param("player", "player"),
+            Param("item", "string"),
+            Param("count", "number?"),
+            Param("components", "table?"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="give",
+        bedrock_call="addItem",
+    ),
+    Primitive(
+        name="clear",
+        summary="Remove items from a player's inventory.",
+        params=(
+            Param("player", "player"),
+            Param("item", "string?"),
+            Param("count", "number?"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="clear",
+        bedrock_call="removeItem",
+    ),
+    Primitive(
+        name="score",
+        summary="Read or modify a scoreboard objective.",
+        params=(
+            Param("player", "player"),
+            Param("objective", "string"),
+            Param("operation", "string?"),
+            Param("value", "number?"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="scoreboard players set",
+        bedrock_call="scoreboard",
+    ),
+    Primitive(
+        name="forEachPlayer",
+        summary="Run a callback once per player currently online.",
+        params=(Param("callback", "function"),),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="execute as @a",
+        bedrock_call="getAllPlayers",
+    ),
+    Primitive(
+        name="forEachEntity",
+        summary="Run a callback once per entity of a given type.",
+        params=(Param("entity_type", "string"), Param("callback", "function")),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.PARTIAL,
+        },
+        notes={
+            Edition.BEDROCK: (
+                "Bedrock has no entity selector, so the callback receives "
+                "entities fetched through a dimension query instead. Filtering "
+                "happens in script rather than in the selector."
+            ),
+        },
+        java_command="execute as @e[type=...]",
+        bedrock_call="getEntities",
+    ),
+    Primitive(
+        name="setblock",
+        summary="Place a block in the world.",
+        params=(
+            Param("x", "number"),
+            Param("y", "number"),
+            Param("z", "number"),
+            Param("block", "string"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.PARTIAL,
+        },
+        notes={
+            Edition.BEDROCK: (
+                "Bedrock cannot place a block with arbitrary block states "
+                "through the script API. The block is placed through a command "
+                "and only plain block identifiers are supported."
+            ),
+        },
+        java_command="setblock",
+        bedrock_call="runCommand",
+    ),
+    Primitive(
+        name="getBlock",
+        summary="Read the block at a position.",
+        params=(Param("x", "number"), Param("y", "number"), Param("z", "number")),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.PARTIAL,
+        },
+        notes={
+            Edition.BEDROCK: (
+                "Bedrock can only read blocks through a command, which is "
+                "slower and returns a text result rather than a block object."
+            ),
+        },
+        java_command="data get block",
+        bedrock_call="runCommand",
+    ),
+    Primitive(
+        name="effect",
+        summary="Apply a status effect to a player.",
+        params=(
+            Param("player", "player"),
+            Param("effect", "string"),
+            Param("seconds", "number?"),
+            Param("amplifier", "number?"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="effect give",
+        bedrock_call="addEffect",
+    ),
+    Primitive(
+        name="playSound",
+        summary="Play a sound for a player or in the world.",
+        params=(
+            Param("sound", "string"),
+            Param("player", "player?"),
+            Param("volume", "number?"),
+            Param("pitch", "number?"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="playsound",
+        bedrock_call="playSound",
+    ),
+    Primitive(
+        name="teleport",
+        summary="Move an entity to a position.",
+        params=(
+            Param("target", "entity"),
+            Param("x", "number"),
+            Param("y", "number"),
+            Param("z", "number"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="tp",
+        bedrock_call="teleport",
+    ),
+    Primitive(
+        name="onTick",
+        summary="Register a callback that runs once every game tick.",
+        params=(Param("callback", "function"),),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="#minecraft:tick",
+        bedrock_call="system.runInterval",
+    ),
+    Primitive(
+        name="onJoin",
+        summary="Register a callback that runs when a player joins.",
+        params=(Param("callback", "function"),),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="#minecraft:load",
+        bedrock_call="playerSpawn",
+    ),
+    Primitive(
+        name="addObjective",
+        summary="Declare a scoreboard objective.",
+        params=(
+            Param("name", "string"),
+            Param("criteria", "string?"),
+            Param("display", "string?"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="scoreboard objectives add",
+        bedrock_call="scoreboard",
+    ),
+    Primitive(
+        name="setDynamicProperty",
+        summary="Store a value on an entity using dynamic properties.",
+        params=(
+            Param("target", "entity"),
+            Param("key", "string"),
+            Param("value", "any"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.NONE,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        notes={
+            Edition.JAVA: (
+                "Java Edition has no equivalent to dynamic properties. Use "
+                "scoreboards or NBT storage instead."
+            ),
+        },
+        bedrock_call="setDynamicProperty",
+    ),
+    Primitive(
+        name="getDynamicProperty",
+        summary="Read a value stored with setDynamicProperty.",
+        params=(Param("target", "entity"), Param("key", "string")),
+        capabilities={
+            Edition.JAVA: Capability.NONE,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        notes={
+            Edition.JAVA: (
+                "Java Edition has no equivalent to dynamic properties."
+            ),
+        },
+        bedrock_call="getDynamicProperty",
+    ),
+    Primitive(
+        name="nbt",
+        summary="Read or write arbitrary NBT data on an entity.",
+        params=(
+            Param("target", "entity"),
+            Param("path", "string"),
+            Param("value", "any"),
+        ),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.NONE,
+        },
+        notes={
+            Edition.BEDROCK: (
+                "Bedrock Edition has no general purpose NBT access from the "
+                "script API. Use setDynamicProperty for simple values."
+            ),
+        },
+        java_command="data modify entity",
+    ),
+    Primitive(
+        name="runCommand",
+        summary="Run a raw command in the world.",
+        params=(Param("command", "string"),),
+        capabilities={
+            Edition.JAVA: Capability.FULL,
+            Edition.BEDROCK: Capability.FULL,
+        },
+        java_command="<raw>",
+        bedrock_call="runCommand",
+    ),
+)
+
+#: Primitives indexed by name.
+PRIMITIVE_BY_NAME: dict[str, Primitive] = {p.name: p for p in PRIMITIVES}
+
+#: Primitives that exist in both editions with identical semantics.
+PORTABLE_PRIMITIVES: tuple[Primitive, ...] = tuple(
+    p for p in PRIMITIVES if p.is_portable()
+)
+
+#: Primitives available in exactly one edition.
+EDITION_ONLY_PRIMITIVES: tuple[Primitive, ...] = tuple(
+    p for p in PRIMITIVES if not p.is_portable()
+)
+
+
+def get_primitive(name: str) -> Primitive | None:
+    """Look up a primitive by name."""
+    return PRIMITIVE_BY_NAME.get(name)
+
+
+def describe_capabilities() -> str:
+    """Render the primitive table as a Markdown table (used by the docs)."""
+    header = "| Primitive | Java | Bedrock | Notes |"
+    divider = "|---|---|---|---|"
+    rows = [header, divider]
+    for prim in PRIMITIVES:
+        java = prim.capability(Edition.JAVA).value
+        bedrock = prim.capability(Edition.BEDROCK).value
+        note = prim.notes.get(Edition.BEDROCK) or prim.notes.get(Edition.JAVA) or ""
+        note = note.replace("\n", " ")
+        rows.append(f"| `{prim.signature()}` | {java} | {bedrock} | {note} |")
+    return "\n".join(rows)
