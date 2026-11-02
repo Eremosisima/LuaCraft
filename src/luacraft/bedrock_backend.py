@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from .api import Edition
+from .content import Content
+from .content_render import render_bedrock_content
 from .diagnostics import DiagnosticBag
 from .java_backend import BackendResult
 from .luaparse import (
@@ -84,7 +86,9 @@ class BedrockBackend:
 
     # -- public -----------------------------------------------------------
 
-    def compile(self, chunk: Chunk) -> BackendResult:
+    def compile(
+        self, chunk: Chunk, content: Content | None = None
+    ) -> BackendResult:
         """Compile a parsed chunk into an add-on."""
         self._body = []
         self._objectives = []
@@ -100,6 +104,12 @@ class BedrockBackend:
         result.add("rp/manifest.json", self._manifest("resource_pack"))
         result.add("bp/scripts/main.ts", self._script())
         result.add("bp/functions/main.mcfunction", self._mcfunction())
+
+        if content is not None:
+            for path, body in render_bedrock_content(
+                content, self.diagnostics
+            ).items():
+                result.add(path, body)
         return result
 
     # -- manifests --------------------------------------------------------

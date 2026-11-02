@@ -43,14 +43,13 @@ authoring language with two compilation targets.
 
 ## Status
 
-**v0.1.0 — alpha.** The parser, the analyser, both backends and the CLI work.
-The portable API covers the common cases; the examples in `examples/` compile
-to both editions today.
+**v0.2.0 — alpha.** The parser, the analyser, both backends, the CLI and the
+declarative content layer work. The examples in `examples/` compile to both
+editions today.
 
-Not yet implemented: content generation (items, recipes, blocks and entities
-are parsed but not emitted yet), a Lua runtime for the sandboxed `table`
-syntax, NBT round-tripping, and a simulator to verify the generated commands
-without launching the game.
+Not yet implemented: NBT round-tripping, entities and loot tables, a Lua
+runtime for the sandboxed `table` syntax, and a simulator to verify the
+generated commands without launching the game.
 
 ---
 
@@ -98,6 +97,87 @@ luacraft api
 
 ---
 
+## Declaring content
+
+Content is declared with plain Lua tables. The same declaration produces an
+item definition in Bedrock and a recipe in Java.
+
+```lua
+items.ruby = {
+  id = "luacraft:ruby",
+  max_stack = 1,
+  texture = "ruby",
+  display_name = "Ruby",
+  category = "items",
+}
+
+items.ruby_sword = {
+  id = "luacraft:ruby_sword",
+  durability = 250,
+  texture = "ruby_sword",
+  category = "equipment",
+  hand_equipped = true,
+  glint = true,
+}
+
+blocks.ruby_block = {
+  hardness = 3.0,
+  resistance = 6.0,
+  light_emission = 4,
+  map_color = "#B00020",
+  texture = "ruby_block",
+}
+
+recipes.ruby_sword = {
+  type = "shaped",
+  pattern = { "R", "R", "S" },
+  key = { R = "luacraft:ruby", S = "minecraft:stick" },
+  result = "luacraft:ruby_sword",
+  group = "luacraft_tools",
+}
+
+recipes.ruby_block = {
+  type = "shapeless",
+  ingredients = { "luacraft:ruby_dust", "luacraft:ruby_dust" },
+  result = "luacraft:ruby_block",
+}
+```
+
+### Item fields
+
+| Field | Bedrock | Java | Notes |
+|---|---|---|---|
+| `id` | ✅ | ⚠️ | Java has no item definitions in a datapack |
+| `max_stack` | ✅ | ⚠️ | Becomes `minecraft:max_stack_size` |
+| `durability` | ✅ | ⚠️ | Becomes `minecraft:durability` |
+| `texture` | ✅ | ⚠️ | Java needs a resource pack |
+| `display_name` | ✅ | ⚠️ | |
+| `category` | ✅ | ❌ | `construction`, `equipment`, `items`, `nature`, `none` |
+| `hand_equipped` | ✅ | ⚠️ | |
+| `glint` | ✅ | ⚠️ | |
+| `food` | ✅ | ⚠️ | Table passed to `minecraft:food` |
+| `fuel` | ✅ | ⚠️ | Table passed to `minecraft:fuel` |
+| `components` | ✅ | ⚠️ | Extra components, verbatim |
+| `base` | ❌ | ✅ | The vanilla item Java falls back to |
+
+### Recipe fields
+
+| Field | Notes |
+|---|---|
+| `type` | `shaped` or `shapeless` |
+| `pattern` | Rows of the crafting grid, for `shaped` |
+| `key` | Pattern character to item, for `shaped` |
+| `ingredients` | Items in any order, for `shapeless` |
+| `result` | The item produced |
+| `count` | How many the recipe produces |
+| `group` | Recipe book group |
+| `tags` | Crafting stations, for example `crafting_table` |
+
+Identifiers without a namespace get the pack namespace, so `result = "ruby"`
+and `result = "luacraft:ruby"` mean the same thing.
+
+---
+
 ## Warnings tell you what will be missing
 
 Portability is decided by construction: each primitive declares what it
@@ -119,11 +199,23 @@ mod.lua:12: warning: forEachEntity() is only partially supported in Bedrock Edit
     = hint: Bedrock has no entity selector, so the callback receives entities
       fetched through a dimension query instead.
 
+mod.lua:5: warning: Java Edition has no item definitions in a datapack, so the
+custom item luacraft:ruby needs a resource pack to have its own texture and
+model
+    = hint: use minecraft:stick as the base item and ship a resource pack with
+      a model and texture for it
+
   3 warnings, 1 error
 ```
 
 Errors mean the build cannot produce a working target. Warnings mean it can,
 but the behaviour is approximated or a feature is dropped.
+
+The custom item case above is the clearest example of why one source cannot
+cover both editions perfectly: **Bedrock has item definitions in the
+behaviour pack, Java Edition has none in a datapack.** The recipe converts
+cleanly. The item needs a resource pack on the Java side, and LuaCraft says
+so instead of pretending otherwise.
 
 ---
 
@@ -184,6 +276,11 @@ The other edition reports a warning naming the hook.
       │   Analyser    │  capability checking, warnings with line numbers
       └────┬──────────┘
            │
+      ┌────▼──────────┐
+      │    Content    │  items, blocks and recipes become an
+      │    reader     │  intermediate representation
+      └────┬──────────┘
+           │
    ┌───────┴────────┐
    ▼                ▼
 ┌─────────┐   ┌──────────────┐
@@ -197,6 +294,12 @@ datapack.zip    add-on .mcaddon
 The Java backend emits ordinary mcfunction commands, so the datapack loads in
 vanilla Java Edition with no mod installed. The Bedrock backend emits
 TypeScript for the `@minecraft/server` module, which the game compiles itself.
+
+Content renders differently on each side, and the difference is reported
+rather than hidden. Recipes convert cleanly. Custom items are written as item
+definitions in the Bedrock behaviour pack; on the Java side LuaCraft reports
+that a resource pack is needed for the texture and model, because Java
+datapacks have no item definitions at all.
 
 ---
 

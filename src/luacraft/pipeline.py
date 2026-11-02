@@ -18,6 +18,7 @@ from pathlib import Path
 from .analyser import Analyser
 from .api import Edition
 from .bedrock_backend import BedrockBackend
+from .content import Content, read_content
 from .diagnostics import DiagnosticBag, Severity
 from .java_backend import BackendResult, JavaBackend
 from .luaparse import Chunk, LuaSyntaxError, parse
@@ -32,6 +33,8 @@ class BuildResult:
     diagnostics: DiagnosticBag = field(default_factory=DiagnosticBag)
     #: Set when the source could not be parsed.
     parse_error: LuaSyntaxError | None = None
+    #: The declarative content the source declared.
+    content: Content = field(default_factory=Content)
 
     @property
     def ok(self) -> bool:
@@ -80,20 +83,26 @@ def build(
     analyser = Analyser(edition, diagnostics)
     analyser.analyse(chunk)
 
+    content = read_content(chunk.body, namespace, diagnostics)
+
     if edition is Edition.JAVA:
         backend = JavaBackend(namespace=namespace, pack_format=pack_format)
-        backend_result = backend.compile(chunk)
+        backend_result = backend.compile(chunk, content)
     else:
         backend = BedrockBackend(
             namespace=namespace,
             pack_name=pack_name,
             min_engine_version=min_engine_version,
         )
-        backend_result = backend.compile(chunk)
+        backend_result = backend.compile(chunk, content)
 
     for generated in backend_result.files:
         result.files[generated.path] = generated.content
 
+    # The backend may report content that cannot be expressed in this
+    # edition, so its diagnostics join the analyser's.
+    diagnostics.extend(backend.diagnostics)
+    result.content = content
     return result
 
 

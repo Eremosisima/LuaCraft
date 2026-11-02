@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from .api import Edition
+from .content import Content
+from .content_render import render_java_content
 from .diagnostics import DiagnosticBag
 from .luaparse import (
     Assign,
@@ -98,7 +100,9 @@ class JavaBackend:
 
     # -- public -----------------------------------------------------------
 
-    def compile(self, chunk: Chunk) -> BackendResult:
+    def compile(
+        self, chunk: Chunk, content: Content | None = None
+    ) -> BackendResult:
         """Compile a parsed chunk into a datapack."""
         self._main = []
         self._tick = []
@@ -114,6 +118,12 @@ class JavaBackend:
         result.objectives = list(self._objectives)
 
         result.add("pack.mcmeta", _pack_mcmeta(self.pack_format))
+
+        if content is not None:
+            for path, body in render_java_content(
+                content, self.diagnostics, self.namespace
+            ).items():
+                result.add(path, body)
 
         # The entry point holds the top level commands and wires the hooks.
         # Bedrock has no `load` event, so the load tag runs the join function

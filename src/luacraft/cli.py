@@ -140,6 +140,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="print the API as JSON"
     )
 
+    content_cmd = sub.add_parser(
+        "content",
+        help="list the content a Lua source declares, without writing anything",
+    )
+    content_cmd.add_argument("source", type=Path, help="the Lua source file")
+    content_cmd.add_argument(
+        "-n", "--namespace", default="luacraft",
+        help="namespace used to qualify identifiers (default: luacraft)",
+    )
+    content_cmd.add_argument(
+        "--json", action="store_true", help="print the content as JSON"
+    )
+
     return parser
 
 
@@ -256,6 +269,75 @@ def _command_api(args) -> int:
     return 0
 
 
+def _command_content(args) -> int:
+    if not args.source.exists():
+        print(f"error: {args.source} does not exist", file=sys.stderr)
+        return 2
+
+    source = args.source.read_text(encoding="utf-8")
+    result = build(source, Edition.JAVA, namespace=args.namespace,
+                   source_name=str(args.source))
+    content = result.content
+
+    if args.json:
+        import json
+
+        payload = {
+            "summary": content.summary(),
+            "items": {
+                name: {
+                    "identifier": item.identifier,
+                    "max_stack": item.max_stack,
+                    "durability": item.durability,
+                    "texture": item.texture,
+                    "category": item.category,
+                }
+                for name, item in content.items.items()
+            },
+            "blocks": {
+                name: {
+                    "identifier": block.identifier,
+                    "hardness": block.hardness,
+                    "light_emission": block.light_emission,
+                    "texture": block.texture,
+                }
+                for name, block in content.blocks.items()
+            },
+            "recipes": {
+                name: {
+                    "identifier": recipe.identifier,
+                    "type": recipe.type,
+                    "result": recipe.result,
+                    "count": recipe.count,
+                }
+                for name, recipe in content.recipes.items()
+            },
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+
+    print(f"content in {args.source}")
+    print()
+    for label, entries in (
+        ("items", content.items),
+        ("blocks", content.blocks),
+        ("recipes", content.recipes),
+    ):
+        if not entries:
+            continue
+        print(f"{label}:")
+        for name, entry in entries.items():
+            if label == "recipes":
+                extra = f" {entry.type} -> {entry.result} x{entry.count}"
+            else:
+                extra = f" {entry.identifier}"
+            print(f"  {name}{extra}")
+        print()
+    if not any((content.items, content.blocks, content.recipes)):
+        print("no content declared")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -266,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
         return _command_check(args)
     if args.command == "api":
         return _command_api(args)
+    if args.command == "content":
+        return _command_content(args)
     parser.error(f"unknown command {args.command!r}")
     return 2
 
