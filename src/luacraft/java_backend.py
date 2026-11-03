@@ -97,11 +97,18 @@ class JavaBackend:
         self._inside_iteration = False
         #: Name of the callback parameter that stands for the current entity.
         self._current_entity_name: str | None = None
+        #: Declared items, mapped to the vanilla item that carries their
+        #: texture and the custom_model_data value that selects it.
+        self._custom_items: dict[str, tuple[str, int]] = {}
 
     # -- public -----------------------------------------------------------
 
     def compile(
-        self, chunk: Chunk, content: Content | None = None
+        self,
+        chunk: Chunk,
+        content: Content | None = None,
+        *,
+        with_textures: bool = False,
     ) -> BackendResult:
         """Compile a parsed chunk into a datapack."""
         self._main = []
@@ -110,6 +117,10 @@ class JavaBackend:
         self._objectives = []
         self._pending_functions = []
         self._counter = 0
+        self._custom_items = {}
+
+        if content is not None:
+            self._register_custom_items(content)
 
         for statement in chunk.body:
             self._emit_statement(statement, self._main)
@@ -121,7 +132,10 @@ class JavaBackend:
 
         if content is not None:
             for path, body in render_java_content(
-                content, self.diagnostics, self.namespace
+                content,
+                self.diagnostics,
+                self.namespace,
+                with_textures=with_textures,
             ).items():
                 result.add(path, body)
 
@@ -180,6 +194,29 @@ class JavaBackend:
         return result
 
     # -- statement handling ----------------------------------------------
+
+    def _register_custom_items(self, content: Content) -> None:
+        """Remember which vanilla item and model index represents each item.
+
+        A datapack cannot register items, so a declared item is emitted as
+        its base vanilla item plus the ``custom_model_data`` component that
+        the generated resource pack retextures.
+        """
+        from .textures import CUSTOM_MODEL_DATA_BASE
+
+        for index, item in enumerate(content.items.values()):
+            self._custom_items[item.identifier] = (
+                item.base_item,
+                CUSTOM_MODEL_DATA_BASE + index,
+            )
+
+    def _item_reference(self, identifier: str) -> str:
+        """Resolve a declared item to the command argument that gives it."""
+        custom = self._custom_items.get(identifier)
+        if custom is None:
+            return identifier
+        base, index = custom
+        return f"{base}[minecraft:custom_model_data={index}]"
 
     def _emit_statement(self, node: Node, out: list[str]) -> None:
         if isinstance(node, ExprStat):
@@ -344,11 +381,16 @@ class JavaBackend:
             return f"tellraw {target} {_json_text(arg(1))}"
         if name == "give":
             target = _selector(arg(0), self._inside_iteration, self._current_entity_name)
-            rest = " ".join(_text(a) for a in args[1:])
+            item = self._item_reference(arg(1))
+            rest = " ".join([item] + [_text(a) for a in args[2:]])
             return f"give {target} {rest}".rstrip()
         if name == "clear":
             target = _selector(arg(0), self._inside_iteration, self._current_entity_name)
-            rest = " ".join(_text(a) for a in args[1:])
+            if len(args) > 1:
+                item = self._item_reference(arg(1))
+                rest = " ".join([item] + [_text(a) for a in args[2:]])
+            else:
+                rest = " ".join(_text(a) for a in args[1:])
             return f"clear {target} {rest}".rstrip()
         if name == "score":
             target = _selector(arg(0), self._inside_iteration, self._current_entity_name)

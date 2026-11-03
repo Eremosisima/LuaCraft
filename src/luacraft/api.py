@@ -31,16 +31,37 @@ from typing import Callable
 
 
 class Edition(Enum):
-    """The two target editions LuaCraft can compile for."""
+    """The target editions LuaCraft can compile for."""
 
     JAVA = "java"
     BEDROCK = "bedrock"
+    LUANTI = "luanti"
 
     @property
     def label(self) -> str:
         if self is Edition.JAVA:
             return "Java Edition"
-        return "Bedrock Edition"
+        if self is Edition.BEDROCK:
+            return "Bedrock Edition"
+        return "Luanti"
+
+    @property
+    def short(self) -> str:
+        """A short name, used to build hook names such as ``onJavaOnly``."""
+        if self is Edition.JAVA:
+            return "Java"
+        if self is Edition.BEDROCK:
+            return "Bedrock"
+        return "Luanti"
+
+    @property
+    def hook_suffix(self) -> str:
+        """The suffix used by the edition specific hook."""
+        if self is Edition.JAVA:
+            return "JavaOnly"
+        if self is Edition.BEDROCK:
+            return "BedrockOnly"
+        return "LuantiOnly"
 
 
 class Capability(Enum):
@@ -75,6 +96,8 @@ class Primitive:
     java_command: str = ""
     #: Emitted by the Bedrock backend as a Script API call.
     bedrock_call: str = ""
+    #: Emitted by the Luanti backend as a core API call.
+    luanti_call: str = ""
     #: Whether the primitive returns a value.
     returns_value: bool = False
 
@@ -82,7 +105,7 @@ class Primitive:
         return self.capabilities.get(edition, Capability.NONE)
 
     def is_portable(self) -> bool:
-        """True when the primitive behaves identically in both editions."""
+        """True when the primitive behaves identically in every edition."""
         return all(
             self.capability(edition) is Capability.FULL for edition in Edition
         )
@@ -104,9 +127,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="say",
         bedrock_call="broadcast",
+        luanti_call="chat_send_all",
     ),
     Primitive(
         name="message",
@@ -115,9 +140,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="tellraw",
         bedrock_call="sendMessage",
+        luanti_call="chat_send_player",
     ),
     Primitive(
         name="give",
@@ -131,9 +158,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="give",
         bedrock_call="addItem",
+        luanti_call="get_inventory().add_item",
     ),
     Primitive(
         name="clear",
@@ -146,9 +175,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="clear",
         bedrock_call="removeItem",
+        luanti_call="get_inventory().clear",
     ),
     Primitive(
         name="score",
@@ -162,9 +193,18 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.PARTIAL,
+        },
+        notes={
+            Edition.LUANTI: (
+                "Luanti has no global scoreboard. The value is kept in the "
+                "player's metadata, which is per player and does not survive "
+                "a world reset."
+            ),
         },
         java_command="scoreboard players set",
         bedrock_call="scoreboard",
+        luanti_call="get_meta().set_int",
     ),
     Primitive(
         name="forEachPlayer",
@@ -173,9 +213,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="execute as @a",
         bedrock_call="getAllPlayers",
+        luanti_call="get_connected_players",
     ),
     Primitive(
         name="forEachEntity",
@@ -184,6 +226,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.PARTIAL,
+            Edition.LUANTI: Capability.PARTIAL,
         },
         notes={
             Edition.BEDROCK: (
@@ -191,9 +234,14 @@ PRIMITIVES: tuple[Primitive, ...] = (
                 "entities fetched through a dimension query instead. Filtering "
                 "happens in script rather than in the selector."
             ),
+            Edition.LUANTI: (
+                "Luanti has no entity type filter. Entities are found inside "
+                "the area around the origin and filtered in script."
+            ),
         },
         java_command="execute as @e[type=...]",
         bedrock_call="getEntities",
+        luanti_call="get_objects_inside_radius",
     ),
     Primitive(
         name="setblock",
@@ -207,6 +255,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.PARTIAL,
+            Edition.LUANTI: Capability.FULL,
         },
         notes={
             Edition.BEDROCK: (
@@ -217,6 +266,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         },
         java_command="setblock",
         bedrock_call="runCommand",
+        luanti_call="set_node",
     ),
     Primitive(
         name="getBlock",
@@ -225,6 +275,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.PARTIAL,
+            Edition.LUANTI: Capability.FULL,
         },
         notes={
             Edition.BEDROCK: (
@@ -234,6 +285,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         },
         java_command="data get block",
         bedrock_call="runCommand",
+        luanti_call="get_node",
     ),
     Primitive(
         name="effect",
@@ -247,6 +299,13 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.NONE,
+        },
+        notes={
+            Edition.LUANTI: (
+                "Luanti has no status effects. Use player attributes or a "
+                "metadata flag and read it from the movement callback."
+            ),
         },
         java_command="effect give",
         bedrock_call="addEffect",
@@ -263,9 +322,17 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.PARTIAL,
+        },
+        notes={
+            Edition.LUANTI: (
+                "Luanti has no server side sound API. The sound is played "
+                "client side through a chat message the client expands."
+            ),
         },
         java_command="playsound",
         bedrock_call="playSound",
+        luanti_call="chat_send_player",
     ),
     Primitive(
         name="teleport",
@@ -279,9 +346,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="tp",
         bedrock_call="teleport",
+        luanti_call="set_pos",
     ),
     Primitive(
         name="onTick",
@@ -290,9 +359,18 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
+        },
+        notes={
+            Edition.LUANTI: (
+                "Luanti runs the global step about ten times per second "
+                "instead of twenty times per second, so the callback runs "
+                "half as often."
+            ),
         },
         java_command="#minecraft:tick",
         bedrock_call="system.runInterval",
+        luanti_call="register_globalstep",
     ),
     Primitive(
         name="onJoin",
@@ -301,9 +379,11 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         java_command="#minecraft:load",
         bedrock_call="playerSpawn",
+        luanti_call="register_on_joinplayer",
     ),
     Primitive(
         name="addObjective",
@@ -316,6 +396,14 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.PARTIAL,
+        },
+        notes={
+            Edition.LUANTI: (
+                "Luanti has no scoreboard objectives. The value is stored in "
+                "the player's metadata, so no declaration is needed and the "
+                "call is dropped from the generated mod."
+            ),
         },
         java_command="scoreboard objectives add",
         bedrock_call="scoreboard",
@@ -331,6 +419,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.NONE,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         notes={
             Edition.JAVA: (
@@ -339,6 +428,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
             ),
         },
         bedrock_call="setDynamicProperty",
+        luanti_call="get_meta().set_string",
     ),
     Primitive(
         name="getDynamicProperty",
@@ -347,6 +437,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.NONE,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.FULL,
         },
         notes={
             Edition.JAVA: (
@@ -354,6 +445,7 @@ PRIMITIVES: tuple[Primitive, ...] = (
             ),
         },
         bedrock_call="getDynamicProperty",
+        luanti_call="get_meta().get_string",
     ),
     Primitive(
         name="nbt",
@@ -366,11 +458,16 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.NONE,
+            Edition.LUANTI: Capability.NONE,
         },
         notes={
             Edition.BEDROCK: (
                 "Bedrock Edition has no general purpose NBT access from the "
                 "script API. Use setDynamicProperty for simple values."
+            ),
+            Edition.LUANTI: (
+                "Luanti has no NBT. Use setDynamicProperty, which writes to "
+                "the entity metadata."
             ),
         },
         java_command="data modify entity",
@@ -382,9 +479,17 @@ PRIMITIVES: tuple[Primitive, ...] = (
         capabilities={
             Edition.JAVA: Capability.FULL,
             Edition.BEDROCK: Capability.FULL,
+            Edition.LUANTI: Capability.PARTIAL,
+        },
+        notes={
+            Edition.LUANTI: (
+                "Luanti commands are not the same as Minecraft commands. The "
+                "command is registered as a chat command instead."
+            ),
         },
         java_command="<raw>",
         bedrock_call="runCommand",
+        luanti_call="register_chatcommand",
     ),
 )
 

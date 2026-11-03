@@ -208,13 +208,16 @@ def render_java_content(
     content: Content,
     diagnostics: DiagnosticBag,
     namespace: str = "luacraft",
+    *,
+    with_textures: bool = False,
 ) -> dict[str, str]:
     """Render every declared recipe for Java.
 
     Java Edition has no item or block definitions in a datapack.  A custom
     item there is a vanilla item with extra components, and its appearance
     needs a resource pack.  Both facts are reported so the author knows what
-    the Java build is missing.
+    the Java build is missing, unless the build already ships the generated
+    resource pack.
     """
     files: dict[str, str] = {}
 
@@ -222,6 +225,9 @@ def render_java_content(
         files[f"data/{namespace}/recipe/{recipe.name}.json"] = _dump(
             render_java_recipe(recipe)
         )
+
+    if with_textures:
+        return files
 
     for item in content.items.values():
         diagnostics.warn(

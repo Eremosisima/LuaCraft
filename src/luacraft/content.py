@@ -1,4 +1,4 @@
-"""Declarative content: items, blocks, recipes and loot tables.
+"""Declarative content: items, blocks, recipes, loot tables and entities.
 
 The author declares content with plain Lua tables::
 
@@ -15,21 +15,25 @@ The author declares content with plain Lua tables::
       result = "luacraft:ruby_sword",
     }
 
+    entities.benogrok = {
+      id = "faunalibre:benogrok",
+      texture = "benogrok",
+      model = "benogrok",
+      health = 17,
+      collision_box = {width = 1.8, height = 0.69},
+      movement_speed = 0.22,
+      tameable = {probability = 0.33, tame_items = {"faunalibre:fruta_lunar"}},
+      drops = {{item = "faunalibre:fruta_lunar", chance = 0.1, min = 1, max = 1}},
+    }
+
 This module turns those tables into an intermediate representation, and the
-two backends render it into the JSON each edition expects.
+backends render it into the JSON/Lua each edition expects.
 
-The two editions disagree about custom items more than anything else, so the
-representation keeps track of what each side can do:
-
-* Bedrock has item definitions in the behaviour pack, so an item can declare
-  components, durability, food, and so on.
-* Java Edition has no item definitions in a datapack.  A custom item there is
-  a vanilla item plus a resource pack model, or a datapack item with only
-  components.  The texture is the part that cannot be expressed without
-  shipping a resource pack.
-
-Everything that cannot be represented in one edition is reported through the
-diagnostics of the build, never silently dropped.
+The editions disagree about custom content, so the representation keeps track
+of what each side can do. Entities are the most complex case: Bedrock has full
+entity definitions, Luanti can register entities via mods, Java has no way
+to add custom entities from a datapack, and Hytale expects asset packs with
+JSON/NPC roles and model assets.
 """
 
 from __future__ import annotations
@@ -52,7 +56,7 @@ from .luaparse import (
 
 
 #: The content tables the author may declare.
-CONTENT_TABLES = frozenset({"items", "blocks", "recipes", "loot"})
+CONTENT_TABLES = frozenset({"items", "blocks", "recipes", "loot", "entities"})
 
 #: Valid values for the creative menu category.
 MENU_CATEGORIES = frozenset(
@@ -85,6 +89,9 @@ class ItemDef:
     components: dict[str, Any] = field(default_factory=dict)
     #: The base vanilla item Java Edition falls back to.
     base_item: str = "minecraft:stick"
+    #: When this item is a proxy for an entity (a species card), the entity
+    #: identifier it stands in for.  Targets with real entity support skip it.
+    fallback_for: str | None = None
 
 
 @dataclass
@@ -134,6 +141,52 @@ class LootDef:
 
 
 @dataclass
+class EntityDef:
+    """A custom entity/mob.
+
+    This is deliberately a *semantic* description, not a copy of the Bedrock
+    component list.  Each backend then decides what it can express:
+
+    * Luanti registers a real entity with a mesh, collision box, health and a
+      small self contained AI.
+    * Hytale exports an NPC role plus a block model.
+    * Bedrock and Java cannot add entities from a datapack; they get a
+      spawnable species card item instead.
+
+    ``texture`` and ``model`` are texture/model *names*; the converter maps
+    them to files.  ``source`` is kept for traceability.
+    """
+
+    name: str
+    identifier: str
+    line: int
+    texture: str | None = None
+    model: str | None = None
+    display_name: str | None = None
+    width: float = 0.6
+    height: float = 1.8
+    health: float | None = None
+    movement_speed: float | None = None
+    hostile: bool | None = None
+    spawnable: bool | None = None
+    tameable: dict[str, Any] | None = None
+    #: Loot entries: item, min, max, chance.
+    drops: list[dict[str, Any]] = field(default_factory=list)
+    #: Bedrock type families, kept for spawn/filter approximations.
+    families: list[str] = field(default_factory=list)
+    #: Texture width/height in pixels, when known from the model.
+    texture_width: int | None = None
+    texture_height: int | None = None
+    #: Visible bounds, in blocks, from the Bedrock geometry.
+    visible_width: float | None = None
+    visible_height: float | None = None
+    #: The pack file the definition came from.
+    source: str = ""
+    #: Behaviour components that were not represented, for the report.
+    unsupported: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Content:
     """Everything the source declared."""
 
@@ -141,6 +194,7 @@ class Content:
     blocks: dict[str, BlockDef] = field(default_factory=dict)
     recipes: dict[str, RecipeDef] = field(default_factory=dict)
     loot: dict[str, LootDef] = field(default_factory=dict)
+    entities: dict[str, EntityDef] = field(default_factory=dict)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -148,6 +202,7 @@ class Content:
             "blocks": len(self.blocks),
             "recipes": len(self.recipes),
             "loot": len(self.loot),
+            "entities": len(self.entities),
         }
 
 
@@ -250,6 +305,12 @@ def read_content(
             loot = _read_loot(entry_name, fields, namespace, line, diagnostics)
             if loot:
                 content.loot[entry_name] = loot
+        elif table_name == "entities":
+            entity = _read_entity(
+                entry_name, fields, namespace, line, diagnostics
+            )
+            if entity:
+                content.entities[entry_name] = entity
 
     return content
 
@@ -296,6 +357,7 @@ def _read_item(
         hand_equipped=_as_bool(fields.get("hand_equipped")),
         components=components,
         base_item=_qualified(namespace, str(fields.get("base", "minecraft:stick"))),
+        fallback_for=_as_str(fields.get("fallback_for")),
     )
     return item
 
@@ -436,6 +498,92 @@ def _read_loot(
         line=line,
         pools=[p for p in pools if isinstance(p, dict)],
     )
+
+
+def _read_entity(
+    name: str,
+    fields: dict[str, Any],
+    namespace: str,
+    line: int,
+    diagnostics: DiagnosticBag,
+) -> EntityDef | None:
+    identifier = fields.get("id")
+    if not identifier:
+        identifier = f"{namespace}:{name}"
+    identifier = _qualified(namespace, str(identifier))
+
+    collision = fields.get("collision_box")
+    if not isinstance(collision, dict):
+        collision = {}
+    width = _as_float(collision.get("width"))
+    height = _as_float(collision.get("height"))
+
+    tameable = fields.get("tameable")
+    if not isinstance(tameable, dict):
+        tameable = None
+
+    raw_drops = fields.get("drops")
+    drops: list[dict[str, Any]] = []
+    if isinstance(raw_drops, list):
+        for entry in raw_drops:
+            if not isinstance(entry, dict):
+                continue
+            item = entry.get("item")
+            if not item:
+                continue
+            drops.append(
+                {
+                    "item": _qualified(namespace, str(item)),
+                    "min": _as_int(entry.get("min")) or 1,
+                    "max": _as_int(entry.get("max")) or 1,
+                    "chance": _as_float(entry.get("chance"))
+                    if _as_float(entry.get("chance")) is not None
+                    else 1.0,
+                }
+            )
+
+    families = fields.get("families")
+    if not isinstance(families, list):
+        families = []
+
+    unsupported = fields.get("unsupported")
+    if not isinstance(unsupported, list):
+        unsupported = []
+
+    entity = EntityDef(
+        name=name,
+        identifier=identifier,
+        line=line,
+        texture=_as_str(fields.get("texture")),
+        model=_as_str(fields.get("model")),
+        display_name=_as_str(fields.get("display_name")),
+        width=width if width is not None else 0.6,
+        height=height if height is not None else 1.8,
+        health=_as_float(fields.get("health")),
+        movement_speed=_as_float(fields.get("movement_speed")),
+        hostile=_as_bool(fields.get("hostile")),
+        spawnable=_as_bool(fields.get("spawnable")),
+        tameable=tameable,
+        drops=drops,
+        families=[str(f) for f in families],
+        texture_width=_as_int(fields.get("texture_width")),
+        texture_height=_as_int(fields.get("texture_height")),
+        visible_width=_as_float(fields.get("visible_width")),
+        visible_height=_as_float(fields.get("visible_height")),
+        source=_as_str(fields.get("source")) or "",
+        unsupported=[str(item) for item in unsupported],
+    )
+    if entity.width <= 0 or entity.height <= 0:
+        diagnostics.warn(
+            Category.PARTIAL_SUPPORT,
+            "entity collision box is empty, using the default 0.6 x 1.8",
+            line,
+            symbol=name,
+            hint="set collision_box = {width = ..., height = ...}",
+        )
+        entity.width = 0.6
+        entity.height = 1.8
+    return entity
 
 
 def _as_str(value: Any) -> str | None:

@@ -146,3 +146,79 @@ def test_an_unknown_target_is_rejected(tmp_path: Path) -> None:
     source = _write(tmp_path, 'say("hola")')
     with pytest.raises(SystemExit):
         main(["build", str(source), "--target", "gamecube"])
+
+
+# -- Godot and Hytale exporters -------------------------------------------
+
+
+def test_godot_command_writes_a_project(tmp_path: Path, capsys) -> None:
+    source = _write(tmp_path, 'items.ruby = { id = "test:ruby" }')
+    output = tmp_path / "godot"
+    code = main(
+        [
+            "godot",
+            str(source),
+            "-o",
+            str(output),
+            "--graphics",
+            "opengl",
+            "--textures",
+        ]
+    )
+    assert code == 0
+    project = (output / "project.godot").read_text(encoding="utf-8")
+    assert 'renderer/rendering_method="gl_compatibility"' in project
+    assert "OpenGL" in capsys.readouterr().out
+
+
+def test_godot_command_accepts_an_obj_folder(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path,
+        """
+        entities.mob = {
+          id = "test:mob",
+          model = "mob_model",
+          texture = "mob",
+          display_name = "Mob",
+        }
+        """,
+    )
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "mob_model.obj").write_text("o mob\nv 0 0 0\n", encoding="utf-8")
+    output = tmp_path / "godot"
+    code = main(
+        ["godot", str(source), "-o", str(output), "--model-dir", str(models)]
+    )
+    assert code == 0
+    assert (output / "models" / "mob_model.obj").exists()
+
+
+def test_hytale_command_writes_a_pack(tmp_path: Path, capsys) -> None:
+    source = _write(tmp_path, 'items.ruby = { id = "test:ruby" }')
+    output = tmp_path / "pack.zip"
+    code = main(["hytale", str(source), "-o", str(output), "--textures"])
+    assert code == 0
+    assert output.exists()
+    assert "Hytale asset pack" in capsys.readouterr().out
+
+
+def test_bridge_command_reports_json(tmp_path: Path, capsys) -> None:
+    import zipfile
+
+    pack = tmp_path / "demo.mcaddon"
+    behaviour = {
+        "format_version": "1.21.0",
+        "minecraft:entity": {
+            "description": {"identifier": "demo:thing", "is_spawnable": True},
+            "components": {"minecraft:health": {"value": 5}},
+        },
+    }
+    with zipfile.ZipFile(pack, "w") as archive:
+        archive.writestr("BP/entities/thing.json", json.dumps(behaviour))
+    output = tmp_path / "out"
+    code = main(["bridge", str(pack), "-o", str(output), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["targets"] == ["java", "bedrock", "luanti", "hytale", "godot"]
+    assert (output / "bridge.json").exists()

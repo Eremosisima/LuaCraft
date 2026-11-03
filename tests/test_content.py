@@ -98,7 +98,7 @@ def test_reads_a_block() -> None:
 def test_ignores_non_content_tables() -> None:
     content, _ = _content("somethingElse.ruby = { }")
     assert content.summary() == {
-        "items": 0, "blocks": 0, "recipes": 0, "loot": 0
+        "items": 0, "blocks": 0, "recipes": 0, "loot": 0, "entities": 0
     }
 
 

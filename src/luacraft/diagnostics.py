@@ -38,6 +38,8 @@ class Category(Enum):
     BEDROCK_UNAVAILABLE = "bedrock-unavailable"
     #: A capability that exists in Bedrock Edition but not in Java Edition.
     JAVA_UNAVAILABLE = "java-unavailable"
+    #: A capability that exists in Luanti but not in the other editions.
+    LUANTI_UNAVAILABLE = "luanti-unavailable"
     #: A capability that is only partially supported by one of the editions.
     PARTIAL_SUPPORT = "partial-support"
     #: The source uses an API that does not exist at all.
@@ -55,6 +57,9 @@ CATEGORY_EXPLANATION: dict[Category, str] = {
     ),
     Category.JAVA_UNAVAILABLE: (
         "this capability does not exist in Minecraft Java Edition"
+    ),
+    Category.LUANTI_UNAVAILABLE: (
+        "this capability does not exist in Luanti"
     ),
     Category.PARTIAL_SUPPORT: (
         "this capability is only partially supported in one of the editions"

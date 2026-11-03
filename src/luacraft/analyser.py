@@ -47,10 +47,20 @@ from .luaparse import (
 TARGET_HOOKS: dict[str, Edition] = {
     "onJavaOnly": Edition.JAVA,
     "onBedrockOnly": Edition.BEDROCK,
+    "onLuantiOnly": Edition.LUANTI,
 }
 
 #: Hooks that always run in both editions.
 PORTABLE_HOOKS = frozenset({"onTick", "onJoin", "onLoad"})
+
+
+def _unavailable_category(edition: Edition) -> Category:
+    """The diagnostic category for a capability missing in an edition."""
+    if edition is Edition.JAVA:
+        return Category.JAVA_UNAVAILABLE
+    if edition is Edition.BEDROCK:
+        return Category.BEDROCK_UNAVAILABLE
+    return Category.LUANTI_UNAVAILABLE
 
 
 @dataclass
@@ -154,8 +164,8 @@ class Analyser:
                 symbol=name,
                 snippet=name,
                 hint=(
-                    "known hooks are onTick, onJoin, onLoad, onJavaOnly and "
-                    "onBedrockOnly"
+                    "known hooks are onTick, onJoin, onLoad, onJavaOnly, "
+                    "onBedrockOnly and onLuantiOnly"
                 ),
             )
 
@@ -195,13 +205,21 @@ class Analyser:
             Edition.BEDROCK if self.edition is Edition.JAVA else Edition.JAVA
         )
         other_capability = primitive.capability(other)
-
         if capability is Capability.NONE:
-            # This primitive simply does not exist here.
+            # This primitive simply does not exist here, so suggest the hook
+            # of an edition that does support it.  That keeps the code out of
+            # this build while remaining useful in the others.
+            supported = next(
+                (
+                    edition
+                    for edition in Edition
+                    if edition is not self.edition
+                    and primitive.capability(edition) is not Capability.NONE
+                ),
+                self.edition,
+            )
             self.diagnostics.error(
-                Category.JAVA_UNAVAILABLE
-                if self.edition is Edition.JAVA
-                else Category.BEDROCK_UNAVAILABLE,
+                _unavailable_category(self.edition),
                 (
                     f"{primitive.name}() is not available in "
                     f"{self.edition.label}: {primitive.notes.get(self.edition, '')}"
@@ -211,8 +229,8 @@ class Analyser:
                 snippet=f"{primitive.name}(...)",
                 edition=self.edition.value,
                 hint=(
-                    f"use the on{other.label.split()[0]}Only hook to keep this "
-                    f"code edition specific"
+                    f"use the on{supported.hook_suffix} hook to keep this "
+                    f"code specific to {supported.label}"
                 ),
             )
             return

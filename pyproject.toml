@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "luacraft"
-version = "0.2.0"
-description = "Write Minecraft mods once in Lua, compile them to Java Edition datapacks and Bedrock Edition add-ons."
+version = "0.4.0"
+description = "Write Minecraft mods once in Lua, compile them to Java Edition datapacks, Bedrock Edition add-ons and Luanti mods, and export Hytale asset packs and Godot 4 projects."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "LuaCraft contributors" }]
-keywords = ["minecraft", "bedrock", "java", "lua", "datapack", "addon", "modding"]
+keywords = ["minecraft", "bedrock", "java", "luanti", "minetest", "lua", "datapack", "addon", "modding", "mcp", "hytale", "godot", "vulkan", "opengl"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

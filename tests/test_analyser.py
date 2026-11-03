@@ -36,6 +36,20 @@ def test_a_java_only_primitive_is_an_error_in_bedrock() -> None:
     assert "Bedrock Edition" in diagnostic.message
 
 
+def test_a_java_only_primitive_is_an_error_in_luanti() -> None:
+    bag = _diagnose('nbt(player, "path", 1)', Edition.LUANTI)
+    assert len(bag) == 1
+    diagnostic = bag.errors[0]
+    assert diagnostic.category is Category.LUANTI_UNAVAILABLE
+    assert "Luanti" in diagnostic.message
+    assert "onJavaOnly" in diagnostic.hint
+
+
+def test_an_unavailable_primitive_suggests_a_supporting_hook() -> None:
+    bag = _diagnose('setDynamicProperty(player, "k", 1)', Edition.JAVA)
+    assert "onBedrockOnly" in bag.errors[0].hint
+
+
 def test_a_partially_supported_primitive_is_a_warning() -> None:
     bag = _diagnose('setblock(0, 64, 0, "minecraft:stone")', Edition.BEDROCK)
     assert len(bag) == 1
@@ -59,6 +73,16 @@ def test_a_target_hook_warns_in_the_other_edition() -> None:
 
 def test_a_target_hook_is_silent_in_its_own_edition() -> None:
     bag = _diagnose('onJavaOnly(function() say("a") end)', Edition.JAVA)
+    assert len(bag) == 0
+
+
+def test_a_luanti_hook_warns_in_the_other_editions() -> None:
+    for edition in (Edition.JAVA, Edition.BEDROCK):
+        bag = _diagnose('onLuantiOnly(function() say("a") end)', edition)
+        assert len(bag) == 1
+        assert "Luanti only hook" in bag.warnings[0].message
+
+    bag = _diagnose('onLuantiOnly(function() say("a") end)', Edition.LUANTI)
     assert len(bag) == 0
 
 
@@ -89,10 +113,10 @@ def test_the_summary_flags_scoreboard_use() -> None:
     assert info.uses_scoreboard is True
 
 
-def test_every_primitive_declares_both_editions() -> None:
+def test_every_primitive_declares_every_edition() -> None:
     for primitive in PRIMITIVES:
-        assert primitive.capability(Edition.JAVA) in set(Capability)
-        assert primitive.capability(Edition.BEDROCK) in set(Capability)
+        for edition in Edition:
+            assert primitive.capability(edition) in set(Capability)
 
 
 def test_every_partial_primitive_explains_itself() -> None:
@@ -115,9 +139,9 @@ def test_every_none_primitive_explains_itself() -> None:
 
 def test_portable_primitives_are_exactly_the_fully_supported_ones() -> None:
     for primitive in PRIMITIVES:
-        expected = (
-            primitive.capability(Edition.JAVA) is Capability.FULL
-            and primitive.capability(Edition.BEDROCK) is Capability.FULL
+        expected = all(
+            primitive.capability(edition) is Capability.FULL
+            for edition in Edition
         )
         assert primitive.is_portable() is expected
 
