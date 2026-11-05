@@ -147,7 +147,9 @@ def test_luanti_skips_the_fallback_card_and_registers_the_entity(
     )
     script = result.files["init.lua"]
     assert 'S.register_entity("demo:benogrok"' in script
-    assert "models/benogrok_model.obj" in script
+    # Media is announced by bare file name, so the mesh has no models/ prefix.
+    assert 'mesh = "benogrok_model.obj"' in script
+    assert "models/benogrok_model.obj" not in script
     assert "collisionbox" in script
     assert "register_craftitem" not in script  # the only item was the card
     assert "models/benogrok_model.obj" in result.files

@@ -257,7 +257,9 @@ class LuantiBackend:
             f"{half_width:.4f}, {entity.height:.4f}, {half_width:.4f}}},"
         )
         lines.append('        visual = "mesh",')
-        lines.append(f"        mesh = {_lua_string(f'models/{model}.obj')},")
+        # Luanti advertises media by bare file name, so the mesh must not
+        # carry the models/ directory prefix even though the file lives there.
+        lines.append(f"        mesh = {_lua_string(f'{model}.obj')},")
         lines.append(f"        textures = {{{_lua_string(f'{texture}.png')}}},")
         lines.append("        visual_size = {x = 1, y = 1, z = 1},")
         lines.append(f"        hp_max = {_number(health)},")
@@ -411,10 +413,9 @@ class LuantiBackend:
         if item.glint:
             fields.append(" groups = { luacraft_glint = 1 }")
         body = ", ".join(fields)
-        return [
-            f"S.register_craftitem({_lua_string(identifier)}, {{ {body} }})",
-            f"S.add_to_creative_inventory({_lua_string(identifier)})",
-        ]
+        # Luanti lists every registered item in the creative inventory unless
+        # it is tagged not_in_creative_inventory, so no extra call is needed.
+        return [f"S.register_craftitem({_lua_string(identifier)}, {{ {body} }})"]
 
     def _render_block(self, block: BlockDef) -> list[str]:
         identifier = self._identifier(block.identifier)
@@ -429,10 +430,7 @@ class LuantiBackend:
         if block.map_color:
             fields.append(f"color = {_lua_string(block.map_color)}")
         body = ", ".join(fields)
-        return [
-            f"S.register_node({_lua_string(identifier)}, {{ {body} }})",
-            f"S.add_to_creative_inventory({_lua_string(identifier)})",
-        ]
+        return [f"S.register_node({_lua_string(identifier)}, {{ {body} }})"]
 
     def _render_recipe(self, recipe: RecipeDef) -> list[str]:
         output = self._identifier(recipe.result)

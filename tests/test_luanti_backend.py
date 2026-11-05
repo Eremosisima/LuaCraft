@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from luacraft.api import Edition
@@ -184,6 +185,40 @@ def test_a_block_becomes_a_node() -> None:
     assert "hardness = 2.0" in script
 
 
+def test_items_and_nodes_only_call_real_luanti_apis() -> None:
+    """Luanti has no add_to_creative_inventory; every registered item shows up."""
+    result = _luanti(
+        """
+        items.ruby = { id = "test:ruby" }
+        blocks.lamp = { id = "test:lamp", texture = "lamp" }
+        """
+    )
+    script = result.files["init.lua"]
+    assert "add_to_creative_inventory" not in script
+
+    allowed = {
+        "register_craftitem",
+        "register_node",
+        "register_craft",
+        "register_entity",
+        "register_abm",
+        "register_chatcommand",
+        "register_globalstep",
+        "register_on_joinplayer",
+        "add_entity",
+        "add_item",
+        "chat_send_all",
+        "chat_send_player",
+        "get_connected_players",
+        "get_node",
+        "get_objects_inside_radius",
+        "get_player_by_name",
+        "set_node",
+    }
+    called = set(re.findall(r"\bS\.([a-z_]+)\(", script))
+    assert called <= allowed, f"unknown Luanti API: {called - allowed}"
+
+
 def test_a_recipe_becomes_a_craft() -> None:
     result = _luanti(
         """
@@ -336,3 +371,22 @@ def test_writing_a_mod_produces_a_zip(tmp_path: Path) -> None:
         names = archive.namelist()
     assert "mymod/init.lua" in names
     assert "mymod/mod.conf" in names
+
+
+def test_an_entity_mesh_uses_the_bare_media_name() -> None:
+    """Luanti announces media by file name, not by its models/ path."""
+    result = _luanti(
+        """
+        entities.benogrok = {
+          id = "faunalibre:benogrok",
+          texture = "benogrok",
+          model = "benogrok_model",
+          health = 17,
+          collision_box = {width = 1.8, height = 0.69},
+        }
+        """
+    )
+    script = result.files["init.lua"]
+    assert 'mesh = "benogrok_model.obj"' in script
+    assert "models/benogrok_model.obj" not in script
+    assert "models/benogrok_model.obj" in result.files

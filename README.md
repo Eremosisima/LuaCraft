@@ -59,10 +59,12 @@ them as native 3D nodes. Java and Bedrock keep a species-card item as the proxy
 because neither can add entities from a pack.
 
 Not yet implemented: NBT round-tripping for Bedrock, a Lua runtime for the
-sandboxed `table` syntax, and a simulator that executes the generated commands
-without launching the game. The sandbox checks structure and references, not
-gameplay. Hytale Java plugins are out of scope; Godot projects are statically
-validated, not launched.
+sandboxed `table` syntax, and a simulator that executes generated commands
+without launching the game. The sandbox itself checks structure and references,
+not gameplay. Luanti can go one step further: `tools/validate_luanti_runtime.py`
+installs the archive and runs a real headless server (Windows, Luanti 5.17+).
+Hytale Java plugins are out of scope; Hytale packs and Godot projects are
+validated statically, not launched.
 
 ---
 
@@ -85,11 +87,50 @@ archive.
 **Not available locally:** Cobbleverse and Anime Characters. The runner reports
 them as `missing` and does not invent or substitute data.
 
+### Launched inside Luanti 5.17.0
+
+The Luanti archives were also installed and executed in a real Luanti 5.17.0
+server using the `mineclonia` game, not just inspected statically.
+`tools/validate_luanti_runtime.py` installs a `*-luanti.zip`, creates a
+throwaway world, and runs a worldmod that checks the live Lua API, then spawns
+one entity and confirms that it steps:
+
+```bash
+py tools/validate_luanti_runtime.py out/pmon-luanti.zip \
+  --mod pmon --entity pmon:abomasnow --luanti "C:/.../luanti.exe"
+```
+
+| Mod | Entities registered | Item | Mesh + texture media | Entity spawned and stepped |
+|---|---|---|---|---|
+| Cobblemon | 1074 | — | yes | yes |
+| Fakemon | 169 | — | yes | yes |
+| Cobblemon sample | 3 | — | yes | yes |
+| FaunaLibre | 64 | `faunalibre:fruta_lunar` | yes | yes |
+
+All four reported `RESULT PASS` with no Lua traceback or `ModError`. The client
+was launched on FaunaLibre as well; that exposed two real bugs, now fixed:
+
+- `add_to_creative_inventory` is not a Luanti function. Every registered item
+  already appears in the creative inventory, so the call was removed.
+- Luanti announces media by **bare file name**, so a mesh declared as
+  `models/benogrok_model.obj` can never be found by the client. The file still
+  lives in `models/`, but the entity now declares `mesh = "benogrok_model.obj"`.
+  Before the fix the client logged
+  `GenericCAO::addToScene(): Could not load mesh`; after the fix it renders the
+  generated model with its placeholder texture.
+
+**Environment note:** the first client launch is blocked by a Windows Defender
+Firewall prompt. Dismissing it (`Cancelar` is enough for loopback) lets the
+local server and client connect. This is a host setting, not a LuaCraft issue.
+
 **What this evidence does and does not prove:**
 
 - The generated Minecraft/Luanti packs reload through the LuaCraft parser and
   the sandbox checks every JSON file, manifest, function, tag, identifier and
   texture reference.
+- The Luanti mods were executed by a real server: entities, items, recipes,
+  meshes, spawn ABMs and the chat command are registered, and one entity was
+  spawned and moved under the generated AI.
 - Hytale packs are schema-validated against the public 2026 asset documentation.
   No Hytale SDK or Java 25 runtime is installed here, so no Java plugin was
   compiled and the game did not load the pack.
