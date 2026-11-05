@@ -138,6 +138,42 @@ local server and client connect. This is a host setting, not a LuaCraft issue.
   scene, runtime script, per-entity model and texture). No Godot executable is
   installed here, so the project was not launched.
 
+### Play the generated world
+
+The two mods that use different namespaces were installed side by side and a
+ready-to-play world was created:
+
+| What | Where |
+|---|---|
+| Cobblemon mod (1074 entities) | `%APPDATA%\minetest\mods\pmon` |
+| FaunaLibre mod (64 entities, 1 item, 1 recipe) | `%APPDATA%\minetest\mods\faunalibre` |
+| World loading both mods | `%APPDATA%\minetest\worlds\luacraft_demo` |
+
+A server run on that world registered 1427 engine entities, of which 1074 were
+`pmon:` and 64 `faunalibre:`, both chat commands were present, and one entity of
+each mod was spawned and stepped (`RESULT PASS`).
+
+Open Luanti, choose **Singleplayer**, select `luacraft_demo` and press **Play**,
+or launch it directly:
+
+```powershell
+& "$env:LOCALAPPDATA\luanti\5.17.0\bin\luanti.exe" --go `
+  --world "$env:APPDATA\minetest\worlds\luacraft_demo" --gameid mineclonia
+```
+
+In game:
+
+```
+/spawn_abomasnow          # Cobblemon entity
+/spawn_benogrok           # FaunaLibre entity
+/giveme faunalibre:fruta_lunar 4
+```
+
+Creatures also spawn naturally through the generated ABM on soil. Every `pmon`
+archive (Cobblemon, Fakemon, Cobblemon sample) uses the same mod name and
+namespace, so only one can be installed at a time; replace the `pmon` folder
+to switch. FaunaLibre uses its own namespace and coexists with any of them.
+
 ---
 
 ## Install
