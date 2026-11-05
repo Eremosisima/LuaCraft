@@ -217,10 +217,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--luanti",
         type=Path,
-        default=Path(
-            r"C:\Users\PC\AppData\Local\luanti\5.17.0\bin\luanti.exe"
-        ),
-        help="luanti executable",
+        default=None,
+        help="luanti executable (default: luanti or minetest on PATH)",
     )
     parser.add_argument(
         "--world-name", default=None, help="world directory name"
@@ -229,6 +227,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.archive.exists():
         raise SystemExit(f"{args.archive} does not exist")
+
+    exe = args.luanti
+    if exe is None:
+        found = shutil.which("luanti") or shutil.which("minetest")
+        if not found:
+            raise SystemExit(
+                "luanti was not found on PATH; pass --luanti <path>"
+            )
+        exe = Path(found)
+    if not exe.exists():
+        raise SystemExit(f"{exe} does not exist")
 
     user_dir = _user_dir()
     mods_dir = user_dir / "mods"
