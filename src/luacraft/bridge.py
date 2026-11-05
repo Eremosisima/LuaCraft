@@ -148,6 +148,20 @@ def run_bridge(
             models=dict(conversion.models),
         )
 
+    # Hytale and Godot are rendered from the Luanti backend's parsed content,
+    # so that build runs even when the Luanti mod itself was not requested.
+    luanti = result.builds.get("luanti")
+    if luanti is None and ({"hytale", "godot"} & set(selected)):
+        luanti = build(
+            source,
+            Edition.LUANTI,
+            namespace=resolved_namespace,
+            pack_name=title,
+            source_name=str(source_name),
+            textures=textures,
+            models=dict(conversion.models),
+        )
+
     # Archives for the game editions.
     game_results = {
         edition: result.builds[name]
@@ -168,7 +182,6 @@ def run_bridge(
             )
         )
 
-    luanti = result.builds.get("luanti")
     if "hytale" in selected and luanti is not None:
         hytale = archive_hytale(
             luanti,

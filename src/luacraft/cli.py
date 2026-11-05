@@ -196,6 +196,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sandbox_cmd.add_argument("archive", type=Path, help="the archive to inspect")
     sandbox_cmd.add_argument(
+        "--target",
+        default="auto",
+        choices=["auto", "hytale", "godot"],
+        help=(
+            "pack format: auto detects Minecraft datapacks, add-ons and mods; "
+            "hytale and godot select their own validators"
+        ),
+    )
+    sandbox_cmd.add_argument(
         "--json", action="store_true", help="print the report as JSON"
     )
 
@@ -744,20 +753,40 @@ def _command_content(args) -> int:
 
 
 def _command_sandbox(args) -> int:
-    from .sandbox import validate_directory, validate_zip
+    from .sandbox import (
+        validate_directory,
+        validate_godot_directory,
+        validate_godot_zip,
+        validate_hytale_directory,
+        validate_hytale_zip,
+        validate_zip,
+    )
 
     if not args.archive.exists():
         print(f"error: {args.archive} does not exist", file=sys.stderr)
         return 2
 
-    if args.archive.is_dir():
-        report = validate_directory(args.archive)
-    else:
-        try:
+    is_dir = args.archive.is_dir()
+    try:
+        if args.target == "hytale":
+            report = (
+                validate_hytale_directory(args.archive)
+                if is_dir
+                else validate_hytale_zip(args.archive)
+            )
+        elif args.target == "godot":
+            report = (
+                validate_godot_directory(args.archive)
+                if is_dir
+                else validate_godot_zip(args.archive)
+            )
+        elif is_dir:
+            report = validate_directory(args.archive)
+        else:
             report = validate_zip(args.archive)
-        except Exception as exc:
-            print(f"error: could not read {args.archive}: {exc}", file=sys.stderr)
-            return 2
+    except Exception as exc:
+        print(f"error: could not read {args.archive}: {exc}", file=sys.stderr)
+        return 2
 
     if args.json:
         print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))

@@ -484,6 +484,8 @@ without launching any game:
 luacraft build mod.lua --target all --textures --sandbox --bundle out/
 luacraft sandbox out/luacraft.mcaddon
 luacraft sandbox out/luacraft-java.zip --json
+luacraft sandbox out/faunalibre-hytale.zip --target hytale
+luacraft sandbox out/godot --target godot
 ```
 
 It checks that every JSON file parses, every Bedrock manifest has valid UUIDs

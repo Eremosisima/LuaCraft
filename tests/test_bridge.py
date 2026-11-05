@@ -191,3 +191,18 @@ def test_texture_set_is_shared_between_builds(tmp_path: Path) -> None:
         models=dict(conversion.models),
     )
     assert result.ok
+
+
+def test_bridge_exports_hytale_and_godot_without_luanti(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "out"
+    result = run_bridge(_pack(tmp_path), out, targets="hytale,godot")
+    assert result.ok
+    # The Luanti mod was not requested, so it is not reported as a build...
+    assert "luanti" not in result.builds
+    assert "luanti" not in result.written
+    # ...but it was compiled internally to feed the asset exporters.
+    assert (out / "demo-hytale.zip").exists()
+    assert (out / "godot" / "project.godot").exists()
+    assert (out / "godot" / "data" / "content.json").exists()

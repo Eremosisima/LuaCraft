@@ -217,6 +217,11 @@ def validate_hytale_zip(path: Path) -> SandboxReport:
     return validate_hytale(files)
 
 
+def validate_hytale_directory(path: Path) -> SandboxReport:
+    """Validate an extracted Hytale asset pack on disk."""
+    return validate_hytale(_directory_files(path))
+
+
 def validate_godot_zip(path: Path) -> SandboxReport:
     """Validate a zipped Godot project."""
     with zipfile.ZipFile(path) as archive:
@@ -230,6 +235,11 @@ def validate_godot_zip(path: Path) -> SandboxReport:
 
 def validate_godot_directory(path: Path) -> SandboxReport:
     """Validate an extracted Godot project on disk."""
+    return validate_godot(_directory_files(path))
+
+
+def _directory_files(path: Path) -> dict[str, bytes]:
+    """Read every file under a directory, keyed by its relative POSIX path."""
     files: dict[str, bytes] = {}
     for file in sorted(path.rglob("*")):
         if not file.is_file():
@@ -238,7 +248,7 @@ def validate_godot_directory(path: Path) -> SandboxReport:
         if relative.startswith(".godot/"):
             continue
         files[relative] = file.read_bytes()
-    return validate_godot(files)
+    return files
 
 
 def _normalise_archive(
@@ -813,7 +823,7 @@ def validate_hytale(files: dict[str, bytes | str]) -> SandboxReport:
     missing_dirs = [
         directory
         for directory in _HYTALE_REQUIRED_DIRS
-        if not any(path.startswith(directory) for path in text)
+        if not any(path.startswith(directory) for path in files)
     ]
     report.add(
         "hytale.layout",

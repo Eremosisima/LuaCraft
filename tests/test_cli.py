@@ -222,3 +222,21 @@ def test_bridge_command_reports_json(tmp_path: Path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["targets"] == ["java", "bedrock", "luanti", "hytale", "godot"]
     assert (output / "bridge.json").exists()
+
+
+def test_sandbox_validates_a_hytale_pack(tmp_path: Path, capsys) -> None:
+    source = _write(tmp_path, 'items.ruby = { id = "test:ruby" }')
+    pack = tmp_path / "pack.zip"
+    assert main(["hytale", str(source), "-o", str(pack), "--textures"]) == 0
+    capsys.readouterr()
+    assert main(["sandbox", str(pack), "--target", "hytale"]) == 0
+    assert "hytale" in capsys.readouterr().out
+
+
+def test_sandbox_validates_a_godot_project(tmp_path: Path, capsys) -> None:
+    source = _write(tmp_path, 'items.ruby = { id = "test:ruby" }')
+    project = tmp_path / "godot"
+    assert main(["godot", str(source), "-o", str(project), "--textures"]) == 0
+    capsys.readouterr()
+    assert main(["sandbox", str(project), "--target", "godot"]) == 0
+    assert "godot" in capsys.readouterr().out
