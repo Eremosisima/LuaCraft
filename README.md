@@ -66,6 +66,39 @@ validated, not launched.
 
 ---
 
+## Validated against real packs
+
+The bridge was run end to end on every Bedrock pack available locally. Each row
+compiled for Java, Bedrock and Luanti, exported a Hytale asset pack and a Godot
+project, and passed the offline sandbox on the in-memory build and on every
+archive.
+
+| Pack | Entities | OBJ + blockymodels | Items | Recipes | Hytale files | Godot files |
+|---|---|---|---|---|---|---|
+| Cobblemon (1074) | 1074 | 1074 | 0 | 0 | 5372 | 2155 |
+| Fakemon Optimizado | 169 | 169 | 0 | 0 | 847 | 345 |
+| Cobblemon sample | 3 | 3 | 0 | 0 | 17 | 13 |
+| FaunaLibre | 64 | 64 | 1 | 1 | 326 | 136 |
+
+`all_sandboxes_ok` and `all_archives_ok` were `True` for all four packs.
+
+**Not available locally:** Cobbleverse and Anime Characters. The runner reports
+them as `missing` and does not invent or substitute data.
+
+**What this evidence does and does not prove:**
+
+- The generated Minecraft/Luanti packs reload through the LuaCraft parser and
+  the sandbox checks every JSON file, manifest, function, tag, identifier and
+  texture reference.
+- Hytale packs are schema-validated against the public 2026 asset documentation.
+  No Hytale SDK or Java 25 runtime is installed here, so no Java plugin was
+  compiled and the game did not load the pack.
+- Godot projects are validated statically (project file, rendering method,
+  scene, runtime script, per-entity model and texture). No Godot executable is
+  installed here, so the project was not launched.
+
+---
+
 ## Install
 
 No dependencies beyond the Python standard library, and the tool never
