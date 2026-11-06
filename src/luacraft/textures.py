@@ -268,6 +268,10 @@ def render_java_textures(
             "pack": {
                 "pack_format": pack_format,
                 "description": "LuaCraft resource pack",
+                "supported_formats": {
+                    "min_inclusive": 15,
+                    "max_inclusive": 999,
+                },
             }
         }
     )
@@ -282,6 +286,17 @@ def render_java_textures(
             {
                 "parent": "minecraft:item/generated",
                 "textures": {"layer0": f"{namespace}:item/{texture}"},
+            }
+        )
+        # Minecraft 1.21.4 replaced model overrides with item model
+        # definitions in assets/<ns>/items/.  Both layouts are emitted so the
+        # pack keeps working on old and new clients.
+        files[f"assets/{namespace}/items/{item.name}.json"] = _json(
+            {
+                "model": {
+                    "type": "minecraft:model",
+                    "model": f"{namespace}:item/{item.name}",
+                }
             }
         )
         base = item.base_item
@@ -321,14 +336,14 @@ def render_java_textures(
             (
                 "Java Edition cannot register new items or blocks from a "
                 "datapack. The resource pack retextures the base vanilla item "
-                "through custom_model_data; the item keeps its vanilla name "
-                "and behaviour"
+                "through minecraft:item_model (and legacy custom_model_data); "
+                "the item keeps its vanilla name and behaviour"
             ),
             0,
             edition="java",
             hint=(
                 "install both the datapack and the resource pack, then give "
-                "the item with the custom_model_data component"
+                "the item with the minecraft:item_model component"
             ),
         )
 

@@ -32,36 +32,36 @@ def test_java_output_has_a_pack_mcmeta() -> None:
 
 def test_java_output_has_a_main_function() -> None:
     result = _java('say("hola")')
-    assert "data/test/functions/main.mcfunction" in result.files
+    assert "data/test/function/main.mcfunction" in result.files
 
 
 def test_java_say_becomes_a_say_command() -> None:
     result = _java('say("hola")')
-    main = result.files["data/test/functions/main.mcfunction"]
+    main = result.files["data/test/function/main.mcfunction"]
     assert 'say {"text":"hola"}' in main
 
 
 def test_java_scoreboard_objectives_are_declared() -> None:
     result = _java('addObjective("coins", "dummy")')
-    objectives = result.files["data/test/functions/_objectives.mcfunction"]
+    objectives = result.files["data/test/function/_objectives.mcfunction"]
     assert "scoreboard objectives add coins dummy" in objectives
 
 
 def test_java_objectives_are_loaded_with_the_load_tag() -> None:
     result = _java('addObjective("coins", "dummy")')
-    tag = json.loads(result.files["data/test/tags/functions/load.json"])
+    tag = json.loads(result.files["data/minecraft/tags/function/load.json"])
     assert "test:_objectives" in tag["values"]
 
 
 def test_java_tick_hook_creates_a_tick_tag() -> None:
     result = _java('onTick(function() say("a") end)')
-    tag = json.loads(result.files["data/test/tags/functions/tick.json"])
+    tag = json.loads(result.files["data/minecraft/tags/function/tick.json"])
     assert "test:_tick" in tag["values"]
 
 
 def test_java_iteration_uses_the_as_selector() -> None:
     result = _java('onTick(function() forEachPlayer(function(p) say("a") end) end)')
-    tick = result.files["data/test/functions/_tick.mcfunction"]
+    tick = result.files["data/test/function/_tick.mcfunction"]
     assert "execute as @a run" in tick
     assert 'say {"text":"a"}' in tick
 
@@ -255,7 +255,7 @@ def test_writing_a_java_pack_produces_a_zip(tmp_path: Path) -> None:
     with zipfile.ZipFile(output) as archive:
         names = archive.namelist()
     assert "pack.mcmeta" in names
-    assert "data/test/functions/main.mcfunction" in names
+    assert "data/test/function/main.mcfunction" in names
 
 
 def test_writing_an_addon_produces_two_packs(tmp_path: Path) -> None:

@@ -339,6 +339,62 @@ def _build_parser() -> argparse.ArgumentParser:
         help="folder of .blockymodel files, keyed by file stem",
     )
 
+    world_cmd = sub.add_parser(
+        "world",
+        help=(
+            "build, install and launch a playable Java or Bedrock world from "
+            "a bridge bundle or a converted pack"
+        ),
+    )
+    world_cmd.add_argument(
+        "source", type=Path,
+        help="bridge output folder, .mcaddon or .mcpack",
+    )
+    world_cmd.add_argument(
+        "-o", "--output", type=Path, default=Path("out/worlds"),
+        help="directory for the generated world folders (default: out/worlds)",
+    )
+    world_cmd.add_argument(
+        "--edition", default="all", choices=["java", "bedrock", "all"],
+        help="world edition to generate (default: all)",
+    )
+    world_cmd.add_argument("--name", help="world display name")
+    world_cmd.add_argument(
+        "--seed", type=int,
+        help="world seed (Java and Bedrock use different generators)",
+    )
+    world_cmd.add_argument(
+        "--install", action="store_true",
+        help="copy the world into the local game and enable its packs",
+    )
+    world_cmd.add_argument(
+        "--launch", action="store_true",
+        help="install the world and open the game (implies --install)",
+    )
+    world_cmd.add_argument(
+        "--force", action="store_true",
+        help="replace an existing world folder",
+    )
+    world_cmd.add_argument(
+        "--copy-textures", action="store_true",
+        help="copy the source pack textures instead of placeholder art",
+    )
+    world_cmd.add_argument(
+        "--mcworld", action="store_true",
+        help="also write a .mcworld archive for the Bedrock world",
+    )
+    world_cmd.add_argument(
+        "--minecraft-dir", type=Path,
+        help="Java .minecraft folder (default: APPDATA/.minecraft)",
+    )
+    world_cmd.add_argument(
+        "--bedrock-dir", type=Path,
+        help="Bedrock com.mojang folder (default: the active account)",
+    )
+    world_cmd.add_argument(
+        "--json", action="store_true", help="print the plans as JSON",
+    )
+
     return parser
 
 
@@ -506,6 +562,119 @@ def _command_bridge(args) -> int:
     for name, path in sorted(result.written.items()):
         print(f"{name:<14}: {path}")
     return 0 if result.ok else 1
+
+
+def _command_world(args) -> int:
+    from . import world_export
+
+    try:
+        bundle = world_export.load_bundle(
+            args.source,
+            work_dir=(
+                args.output / "_source" / world_export._stem(args.source)
+                if args.source.is_file()
+                else None
+            ),
+            copy_textures=args.copy_textures,
+        )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    editions = ["java", "bedrock"] if args.edition == "all" else [args.edition]
+    plans = []
+    failures: list[str] = []
+
+    for edition in editions:
+        try:
+            if edition == "java":
+                plan = world_export.build_java_world(
+                    bundle,
+                    args.output,
+                    world_name=args.name,
+                    seed=args.seed,
+                    force=args.force,
+                )
+            else:
+                plan = world_export.build_bedrock_world(
+                    bundle,
+                    args.output,
+                    world_name=args.name,
+                    seed=args.seed,
+                    force=args.force,
+                )
+        except Exception as exc:
+            failures.append(f"{edition}: {exc}")
+            continue
+        plans.append(plan)
+
+    if args.install or args.launch:
+        for plan in plans:
+            try:
+                if plan.edition == "java":
+                    world_export.install_java(
+                        plan,
+                        minecraft_dir=args.minecraft_dir,
+                        force=args.force,
+                    )
+                else:
+                    world_export.install_bedrock(
+                        plan,
+                        game_dir=args.bedrock_dir,
+                        force=args.force,
+                    )
+            except Exception as exc:
+                failures.append(f"install {plan.edition}: {exc}")
+
+    if args.launch:
+        for plan in plans:
+            if plan.installed_at is None:
+                continue
+            try:
+                if plan.edition == "java":
+                    world_export.launch_java(plan)
+                else:
+                    world_export.launch_bedrock(plan)
+            except Exception as exc:
+                failures.append(f"launch {plan.edition}: {exc}")
+
+    mcworlds: list[Path] = []
+    if args.mcworld:
+        for plan in plans:
+            if plan.edition != "bedrock":
+                continue
+            path = world_export.pack_mcworld(
+                plan, args.output / f"{plan.folder}-bedrock.mcworld"
+            )
+            mcworlds.append(path)
+
+    report = {
+        "bundle": bundle.summary(),
+        "worlds": [plan.summary() for plan in plans],
+        "mcworld": [str(path) for path in mcworlds],
+        "failures": failures,
+    }
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print(f"source    : {bundle.source}")
+        print(f"namespace : {bundle.namespace}")
+        for plan in plans:
+            print(f"{plan.edition:<8}: {plan.directory}")
+            for note in plan.notes:
+                print(f"  note: {note}")
+            if plan.installed_at:
+                print(f"  installed: {plan.installed_at}")
+            if plan.launch_message:
+                print(f"  launch   : {plan.launch_message}")
+        for path in mcworlds:
+            print(f"mcworld  : {path}")
+        for warning in bundle.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        for failure in failures:
+            print(f"error: {failure}", file=sys.stderr)
+
+    return 0 if plans and not failures else 1
 
 
 def _load_models(directory: Path | None) -> dict[str, str]:
@@ -830,6 +999,8 @@ def main(argv: list[str] | None = None) -> int:
         return _command_godot(args)
     if args.command == "hytale":
         return _command_hytale(args)
+    if args.command == "world":
+        return _command_world(args)
     if args.command == "sandbox":
         return _command_sandbox(args)
     if args.command == "gui":

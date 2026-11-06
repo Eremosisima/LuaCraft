@@ -59,7 +59,7 @@ def test_luanti_build_passes_the_sandbox() -> None:
 
 def test_invalid_json_fails_the_sandbox() -> None:
     result = _build(Edition.JAVA)
-    result.files["data/test/tags/functions/load.json"] = "{not json"
+    result.files["data/minecraft/tags/function/load.json"] = "{not json"
     report = validate_build(result)
     assert report.ok is False
     assert "json" in report.failures[0].name
@@ -75,7 +75,7 @@ def test_non_png_image_fails_the_sandbox() -> None:
 
 def test_unknown_java_command_fails_the_sandbox() -> None:
     result = _build(Edition.JAVA)
-    result.files["data/test/functions/main.mcfunction"] = "explode @s\n"
+    result.files["data/test/function/main.mcfunction"] = "explode @s\n"
     report = validate_build(result)
     assert report.ok is False
     assert any(check.name == "java.commands" for check in report.failures)
@@ -83,7 +83,7 @@ def test_unknown_java_command_fails_the_sandbox() -> None:
 
 def test_missing_java_function_target_fails_the_sandbox() -> None:
     result = _build(Edition.JAVA)
-    result.files["data/test/functions/main.mcfunction"] = "function test:nope\n"
+    result.files["data/test/function/main.mcfunction"] = "function test:nope\n"
     report = validate_build(result)
     assert report.ok is False
     assert any(

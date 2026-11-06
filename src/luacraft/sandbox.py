@@ -413,7 +413,7 @@ def _check_java(
     missing_functions: list[str] = []
     for path, body in functions.items():
         for namespace, name in _FUNCTION_CALL.findall(body):
-            target = f"data/{namespace}/functions/{name}.mcfunction"
+            target = f"data/{namespace}/function/{name}.mcfunction"
             if target not in text:
                 missing_functions.append(f"{path} -> {namespace}:{name}")
     report.add(
@@ -439,7 +439,7 @@ def _check_java(
             if value.startswith("#"):
                 continue
             namespace, _, name = value.partition(":")
-            if f"data/{namespace}/functions/{name}.mcfunction" not in text:
+            if f"data/{namespace}/function/{name}.mcfunction" not in text:
                 missing_tags.append(f"{path} -> {value}")
     report.add(
         "java.tags",

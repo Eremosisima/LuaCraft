@@ -58,13 +58,14 @@ OBJ geometry, Hytale gets NPC roles and `.blockymodel` assets, and Godot spawns
 them as native 3D nodes. Java and Bedrock keep a species-card item as the proxy
 because neither can add entities from a pack.
 
-Not yet implemented: NBT round-tripping for Bedrock, a Lua runtime for the
-sandboxed `table` syntax, and a simulator that executes generated commands
-without launching the game. The sandbox itself checks structure and references,
-not gameplay. Luanti can go one step further: `tools/validate_luanti_runtime.py`
-installs the archive and runs a real headless server (Windows, Luanti 5.17+).
-Hytale Java plugins are out of scope; Hytale packs and Godot projects are
-validated statically, not launched.
+Not yet implemented: a Lua runtime for the sandboxed `table` syntax, and a
+simulator that executes generated commands without launching the game. The
+sandbox itself checks structure and references, not gameplay. Luanti can go one
+step further: `tools/validate_luanti_runtime.py` installs the archive and runs a
+real headless server (Windows, Luanti 5.17+). Hytale Java plugins are out of
+scope; Hytale packs and Godot projects are validated statically, not launched.
+Minecraft Java and Bedrock get real world folders: `luacraft world` writes the
+NBT `level.dat`, the packs and (for Bedrock) a small valid LevelDB database.
 
 ---
 
@@ -174,6 +175,39 @@ archive (Cobblemon, Fakemon, Cobblemon sample) uses the same mod name and
 namespace, so only one can be installed at a time; replace the `pmon` folder
 to switch. FaunaLibre uses its own namespace and coexists with any of them.
 
+### Java and Bedrock worlds
+
+`luacraft world` was run on the FaunaLibre bridge bundle, producing real world
+folders with the packs already applied:
+
+| What | Where |
+|---|---|
+| Java world (level.dat, datapack, resource pack) | `out/worlds/java/FaunaLibre` |
+| Bedrock world (level.dat, packs, LevelDB, `.mcworld`) | `out/worlds/bedrock/FaunaLibre` |
+| Bedrock world installed for the local client | `%APPDATA%\Minecraft Bedrock\Users\...\games\com.mojang\minecraftWorlds\FaunaLibre` |
+
+Checks performed on the output:
+
+- both `level.dat` files decode with the NBT reader and round-trip
+  (`DataVersion` 4325 on Java, storage version 10 on Bedrock);
+- both world pack activations resolve to the generated manifests;
+- the Bedrock `db/` manifest decodes and its masked CRC32C checksum verifies;
+- the Java datapack contains `data/minecraft/tags/function/load.json` and
+  `data/<ns>/function/kit.mcfunction` with one `minecraft:item_model` command
+  per declared item, and the resource pack contains one
+  `assets/<ns>/items/<item>.json` per item.
+
+In-game verification is honest about the limits of this machine:
+
+- **Java Edition is not installed here.** Only the launcher stub and the
+  version JSON exist, with no game jar, libraries or runtime, so the Java world
+  could be generated and installed but not opened. Install the game, sign in,
+  and the world appears under **Singleplayer**.
+- **Bedrock is installed, but the client did not reach the menu** in this
+  environment — it stalled on its loading screen before the world list, with no
+  log files written. The world files themselves pass the structural checks
+  above; the load was not observed, so it is not claimed.
+
 ---
 
 ## Install
@@ -211,6 +245,10 @@ luacraft bridge pack.mcaddon -o out/pack
 luacraft godot mod.lua -o out/godot --graphics vulkan
 luacraft hytale mod.lua -o out/hytale.zip
 
+# Turn a converted pack into worlds, install them and open the game
+luacraft world out/pack --edition all --install
+luacraft world pack.mcaddon -o out/worlds --edition bedrock --mcworld
+
 # Report what each edition supports, without writing anything
 luacraft check mod.lua --debug
 
@@ -246,6 +284,48 @@ luacraft bridge pack.mcaddon -o out/pack --json
 | `--graphics` | Godot backend: `vulkan`, `vulkan-mobile` or `opengl` |
 | `--targets` | Comma separated subset of `java,bedrock,luanti,hytale,godot` |
 | `--json` | Print the bridge report as JSON |
+
+### Play a world
+
+A pack is not a world. `luacraft world` assembles a complete world folder from
+a bridge bundle (or converts a `.mcaddon`/`.mcpack` first), then optionally
+installs it into the local game:
+
+```bash
+luacraft world out/pack                      # write Java and Bedrock worlds
+luacraft world out/pack --edition java       # only the Java world
+luacraft world pack.mcaddon --install --launch
+```
+
+| Option | Meaning |
+|---|---|
+| `-o, --output` | Directory for the world folders, default `out/worlds` |
+| `--edition` | `java`, `bedrock` or `all` (default) |
+| `--name` | World display name |
+| `--seed` | World seed |
+| `--install` | Copy the world into the local game and enable its packs |
+| `--launch` | Install, then open the game (implies `--install`) |
+| `--force` | Replace an existing world folder |
+| `--copy-textures` | Copy source textures instead of placeholders |
+| `--mcworld` | Also write a `.mcworld` archive for the Bedrock world |
+| `--minecraft-dir` | Java `.minecraft` folder, default `%APPDATA%\.minecraft` |
+| `--bedrock-dir` | Bedrock `com.mojang` folder, default the active account |
+| `--json` | Print the plans as JSON |
+
+The Java world contains a gzip NBT `level.dat` (`DataVersion` 4325, which newer
+clients upgrade on load), `datapacks/<namespace>.zip` with the compiled
+functions and a generated `/function <namespace>:kit`, and
+`resourcepacks/<namespace>-resources.zip` with the item models. The world
+datapack id is recorded in `level.dat`, and `install_java` enables the resource
+pack in `options.txt`.
+
+The Bedrock world contains a little-endian `level.dat` with header storage
+version 10, `levelname.txt`, world-scoped `behavior_packs/` and
+`resource_packs/` with their manifests, the matching
+`world_behavior_packs.json`/`world_resource_packs.json` activation files, and
+an empty **valid** LevelDB database under `db/`. Bedrock treats a missing or
+malformed database as a corrupt world, so LuaCraft writes the LevelDB manifest
+and log record itself; the terrain is generated by the game on first load.
 
 ### Options
 
